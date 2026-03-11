@@ -38,13 +38,21 @@ Perform a comprehensive code review of a pull request or branch diff using the k
    - Review the blast radius across the entire PR
    - Identify high-risk areas (widely depended-upon code)
 
-6. **Deep-dive each changed file**:
+6. **Get LSP diagnostics** by calling `mcp__ide__getDiagnostics()` (no arguments for all files, or pass a file URI for specific files). This returns:
+   - Syntax errors
+   - Type errors
+   - Linting warnings
+   - Unused variables/imports
+   - Other language-specific issues
+
+7. **Deep-dive each changed file**:
    - Read the full source of files with significant changes
    - Check against loaded standards sections for violations
    - Use `query_graph_tool(pattern="callers_of", target=<func>)` for high-risk functions
    - Check for breaking changes in public APIs
+   - Verify no unresolved LSP diagnostics in changed files
 
-7. **Generate structured review output**:
+8. **Generate structured review output**:
 
    ```
    ## PR Review: <title>
@@ -61,12 +69,21 @@ Perform a comprehensive code review of a pull request or branch diff using the k
    - Phase 1 (Financial): ✅ Pass / ⚠️ Issues found
    - Phase 2-4: (if applicable)
 
+   ### LSP Diagnostics
+   - <file_path>: X errors, Y warnings (list if any)
+   - All resolved: ✅ / ⚠️ Needs attention
+
    ### File-by-File Review
    #### <file_path>
    - Changes: <description>
    - Impact: <who depends on this>
    - Issues: <bugs, style, concerns>
+   - LSP diagnostics: <unresolved errors/warnings>
    - Standards violations: <specific phase violations>
+
+   ### Diagnostics Summary
+   - **Errors**: X total (list if critical)
+   - **Warnings**: Y total (list if significant)
 
    ### Recommendations
    1. <actionable suggestion>

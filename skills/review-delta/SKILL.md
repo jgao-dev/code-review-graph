@@ -38,15 +38,24 @@ Perform a focused, token-efficient code review of only the changed code and its 
    - Classes with inheritance changes (Liskov substitution concerns)
    - Files with many dependents (high-risk changes)
 
-5. **Perform the review** using the context and standards. For each changed file:
+5. **Get LSP diagnostics** by calling `mcp__ide__getDiagnostics()` (no arguments for all files, or pass a file URI for specific files). This returns:
+   - Syntax errors
+   - Type errors
+   - Linting warnings
+   - Unused variables/imports
+   - Other language-specific issues
+
+6. **Perform the review** using the context, standards, and diagnostics. For each changed file:
    - Review the source snippet for correctness, style, and potential bugs
    - Check against loaded standards sections for violations
    - Check if impacted callers/dependents need updates
+   - Verify no unresolved diagnostics remain in changed files
 
-6. **Report findings** in a structured format:
+7. **Report findings** in a structured format:
    - **Summary**: One-line overview of the changes
    - **Risk level**: Low / Medium / High (based on blast radius)
    - **Standards violations**: Organized by phase (if any)
+   - **LSP diagnostics**: Unresolved errors/warnings in changed files
    - **Issues found**: Bugs, style issues, standards violations
    - **Blast radius**: List of impacted files/functions
    - **Recommendations**: Actionable suggestions

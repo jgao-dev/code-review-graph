@@ -17,5 +17,6 @@
       "args": ["code-review-graph", "serve"]
     }
   },
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "agents": "./agents/"
 }
