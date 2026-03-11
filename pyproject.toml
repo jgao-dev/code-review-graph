@@ -10,7 +10,7 @@ readme = {file = "README.md", content-type = "text/markdown"}
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "John Gao", email = "john@ezo.ai" },
+    { name = "John Gao", email = "john@ezo.app" },
 ]
 keywords = ["code-review", "knowledge-graph", "tree-sitter", "claude-code", "mcp"]
 classifiers = [

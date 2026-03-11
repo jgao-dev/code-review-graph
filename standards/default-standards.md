@@ -1,14 +1,12 @@
 ---
-name: Ezo Senior Code Review Protocol
-version: "2.3"
-description: Comprehensive coding standards for financial systems
-author: John Gao
-company: Ezo
+name: Ezo Code Review Standards
+version: "4.0"
+description: Simplified standards organized by domain
 ---
 
 # Code Review Standards
 
-Use `get_review_standards_tool(section_name="<phase>")` to load specific phases.
+Use `get_review_standards_tool(section_name="<section>")` to load specific sections.
 
 ## Installation
 
@@ -33,9 +31,19 @@ Restart Claude Code after either method. Requires Python 3.10+ and [uv](https://
 To use your own standards, create `.code-review-standards.md` in your repo root:
 
 ```markdown
-<section name="my-phase">
-## My Custom Phase
-Your coding standards here...
+<section name="principles">
+## Principles
+Your universal coding standards here...
+</section>
+
+<section name="frontend">
+## Frontend
+Your frontend-specific standards here...
+</section>
+
+<section name="backend">
+## Backend
+Your backend-specific standards here...
 </section>
 ```
 
@@ -43,160 +51,374 @@ The plugin will auto-discover and use your standards instead of the defaults.
 
 ---
 
-<section name="phase-0">
-## Phase 0: Structural Integrity & Anti-Bloat
+<section name="principles">
+## Principles
+
+These standards apply to all code regardless of domain.
+
+### Structural Integrity
 
 If the structure is wrong, the code does not matter.
 
-### Folder Flattening Rule
-No unnecessary nesting. Avoid `ops/shared/*`.
+#### Flat Folder Hierarchy
 
-✅ Correct: `ops/schemas`, `ops/types`, `ops/utils`
+**Rule:** Maximum 2 levels of nesting under a domain folder.
 
-The "One Location" Check: If two folders share a name (e.g., schemas) or constants are duplicated across layers, merge them. Exactly one canonical location per concern.
+```
+✅ ops/schemas/
+✅ ops/types/
+✅ ops/utils/
+❌ ops/shared/schemas/
+❌ ops/shared/utils/
+```
 
-### Constant Boundary Check [CRITICAL]
-Constants must respect layer boundaries.
+**Rationale:** Deep nesting creates discovery friction. Each additional level is a cognitive tax.
 
-- Frontend: `apps/*`
-- Backend: `api/*`
-- Truly Shared: `@ezo/constants`
+#### Canonical Location Principle
 
-No Re-export Chains: Never `export * from '@ezo/constants'` inside a local index. Import directly from the source.
+**Rule:** Each concern has exactly one home. If two folders serve the same purpose, merge them.
 
-### Intent vs Value Rule
-Storage details must not leak into the UI.
+**Check:** Are constants duplicated across `apps/*`, `api/*`, and shared packages? If yes, consolidate.
 
-The Rule: If a constant describes a DB implementation detail (e.g., `DECIMAL(27,18)`), it must not cross the boundary.
+```
+❌ apps/web/constants/currencies.ts
+❌ api/constants/currencies.ts
+✅ @ezo/constants/currencies.ts (single source)
+```
 
-✅ Pattern: Storage uses `DB_SCALE = 18`. UI uses `DISPLAY_PRECISION = 4`.
-</section>
+#### No Re-export Chains
 
-<section name="phase-0.5">
-## Phase 0.5: The Anti-Defensive Bloat Rule
+**Rule:** Never re-export from an external package through a local index.
 
-Validation belongs at the boundary, not the middle.
+```typescript
+// ❌ @ezo/constants/index.ts
+export * from './currencies'
 
-### Boundary Validation Principle
-Trust the Schema, the DB, and the Types. Heavy validation happens only at:
-- API Input (Zod)
-- DB Constraints (Unique/Not Null)
-- Output Serialization
+// ❌ apps/web/lib/constants.ts
+export * from '@ezo/constants'
 
-Stop the Spam: If the DB says NOT NULL, do not code `value ?? fallback`. No mid-function guard spam.
+// ✅ Import directly
+import { USD, EUR } from '@ezo/constants/currencies'
+```
+
+**Rationale:** Re-export chains hide the true source, making refactoring hazardous.
+
+### Recipe Readability
+
+Code must read top-to-bottom like a cooking recipe. If understanding execution requires jumping between files, it fails review.
+
+#### Linear Execution Principle
+
+**Rule:** Each function tells a complete story in sequence.
+
+```typescript
+// ✅ Recipe pattern - read top to bottom
+async function processPayment(input: PaymentInput) {
+  // 1. Validate capacity (string length before BigInt)
+  if (input.amount.split('.')[0].length > MAX_AMOUNT_DIGITS) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Amount exceeds capacity' })
+  }
+
+  // 2. Convert to safe numeric type
+  const amount = BigInt(input.amount)
+  const fee = BigInt(input.fee)
+
+  // 3. Business invariant
+  if (amount <= fee) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Fee exceeds amount' })
+  }
+
+  // 4. Execute
+  const net = amount - fee
+  await db.insert(payments).values({ amount: net.toString() })
+}
+```
+
+#### Indirection Detection
+
+**Smells that fail review:**
+
+| Pattern | Problem |
+|---------|---------|
+| Helper used once | Inlines are clearer |
+| "Guard" classes | Adds cognitive load without value |
+| Wrapper for native API | Hides obvious behavior |
+
+```typescript
+// ❌ Helper used once
+const isValidAmount = (s: string) => s.split('.')[0].length <= 15
+if (isValidAmount(input.amount)) { ... }
+
+// ✅ Inline is self-documenting
+if (input.amount.split('.')[0].length <= MAX_AMOUNT_DIGITS) { ... }
+```
+
+#### Drizzle ORM Clarity
+
+**Rule:** Database queries must be direct and readable.
+
+```typescript
+// ❌ Callback pattern obscures the query
+await db.select().from(users).where((t, { eq }) => eq(t.id, input.id))
+
+// ✅ Explicit where clause
+await db.select().from(users).where(eq(users.id, input.id))
+```
+
+### Utility Discipline
+
+#### The Inlining Threshold
+
+**Rule:** Delete utilities that meet ALL of:
+1. Fewer than 5 lines of logic
+2. Used in fewer than 3 locations
+3. Wraps native functionality
+
+**Action:** Inline it.
+
+```typescript
+// ❌ 2-line helper, used once
+const formatDate = (d: Date) => d.toISOString().split('T')[0]
+const today = formatDate(new Date())
+
+// ✅ Inline when trivial
+const today = new Date().toISOString().split('T')[0]
+```
+
+#### Cognitive Load Test
+
+**Rule:** If an abstraction requires reading its implementation to understand usage, delete it.
+
+**Good abstraction:** `debounce(fn, 500)` — behavior is clear from signature.
+
+**Bad abstraction:** `withRetry(fn, { max: 3, delay: 'exponential' })` — requires reading implementation.
 
 ### Single Validation Location
 
-| Concern | Location |
-|---------|----------|
-| Input Shape | Zod Schema |
-| Financial Capacity | String length check (pre-BigInt) |
-| Business Logic | API Layer |
-| Referential Integrity | Database Engine |
-</section>
+**Rule:** Each concern validates in exactly one place.
 
-<section name="phase-0.6">
-## Phase 0.6: The Recipe Readability Rule
+| Concern | Validator | Location |
+|---------|-----------|----------|
+| Input shape | Zod schema | API entry point |
+| Financial capacity | String length check | Before BigInt conversion |
+| Business rules | Domain logic | Service layer |
+| Referential integrity | Database | Foreign key constraints |
 
-Code must read top-to-bottom like a cooking recipe.
+**Rationale:** Duplicated validation creates drift. Trust the layer that owns the concern.
 
-If understanding execution requires opening multiple files, it fails review.
+### Barrel Hygiene
 
-Smells of Indirection:
-- Helper functions used once
-- "Guard" classes
-- Wrapper utilities for native logic
+**Rule:** `index.ts` exports its own directory only.
 
-Example of "Recipe" Logic:
 ```typescript
-// 1. Validate Capacity
-if (input.amount.split('.')[0].length > MAX_AMOUNT_INTEGER_DIGITS) {
-  throw new TRPCError({ code: 'BAD_REQUEST' })
-}
+// ❌ Re-exports external package
+export * from 'lodash'
 
-// 2. Convert & Execute
-const amount = BigInt(input.amount)
-const fee = BigInt(input.fee)
-
-if (amount <= fee) throw new TRPCError({ code: 'BAD_REQUEST' })
-
-const net = amount - fee // Linear. Deterministic. Auditable.
+// ✅ Exports local modules only
+export * from './user'
+export * from './payment'
 ```
 
-### Drizzle ORM Clarity
-Database queries must be direct. No clever callbacks or destructuring.
+### Pre-Submit Checklist
 
-❌ Forbidden: `where: (tbl, { eq }) => eq(tbl.id, input.id)`
+Reviewers check these in order:
 
-✅ Correct: `where: eq(opsIdentities.id, input.id)`
+1. **Structure:** Is the folder hierarchy flat? Is each concern in one place?
+2. **Readability:** Does the function read top-to-bottom without jumps?
+3. **Utilities:** Is every utility above the inlining threshold?
+4. **Validation:** Is validation at the correct layer?
+
+### Testing Policy
+
+We prioritize architectural correctness and database constraints over unit test coverage.
+
+**When tests ARE required:**
+- Complex state machines
+- Multi-step financial calculations
+- Integration points with external systems
+
+**When tests are NOT required:**
+- Code following the Recipe pattern
+- Validation delegated to schemas or DB constraints
+- CRUD operations
+
+Reviewers: Do not flag missing test coverage unless a standards section explicitly requires tests.
 </section>
 
-<section name="phase-1">
-## Phase 1: Financial Integrity
+<section name="frontend">
+## Frontend
+
+Standards specific to frontend code (anything in `apps/` folder).
+
+### Timezone Authority
+
+**Rule:** Frontend owns timezone handling. Backend receives ISO strings.
+
+```typescript
+// ✅ Frontend sends timezone-aware boundaries
+POST /api/transactions {
+  startDate: '2024-01-01T05:00:00Z',
+  endDate: '2024-01-02T04:59:59Z'
+}
+
+// ❌ Backend calculates day boundaries
+const startOfDay = new Date().setHours(0, 0, 0, 0)
+```
+
+### Storage-UI Separation
+
+**Rule:** Constants describing database implementation must not appear in UI code.
+
+```typescript
+// ❌ Leaks DB detail to frontend
+export const MAX_DECIMAL_SCALE = 18
+// Frontend uses this for display
+
+// ✅ Separate concerns
+// Backend: db-config.ts
+const DECIMAL_PRECISION = 18
+
+// Frontend: display-config.ts
+const DISPLAY_DECIMALS = 4
+```
+
+### Data Minimalism
+
+**Rule:** Return primitive fields only. UI composes derived values.
+
+```typescript
+// ❌ Computed in API
+return { fullName: `${user.firstName} ${user.lastName}` }
+
+// ✅ Primitives only
+return { firstName: user.firstName, lastName: user.lastName }
+```
+
+### Money Display
+
+**Rule:** Always display money values as strings. Never use `Number` for financial amounts.
+
+```typescript
+// ❌ Number loses precision
+const display = `$${amount.toFixed(2)}`
+
+// ✅ String preserves precision
+const display = `$${formatMoney(amount)}`
+```
+</section>
+
+<section name="backend">
+## Backend
+
+Standards specific to backend code (anything in `packages/` folder).
+
+### Financial Integrity
 
 **Policy: Zero-Tolerance. Violation = Automatic REJECT.**
 
-### The BigInt Rule
-- All math uses BigInt. No `parseFloat` or `Number()`.
-- Transport/Storage: Money is always a String. Never transport numbers via API.
-- The Boundary Exception: Number conversion is only allowed at the final outbound call to a 3rd-party SDK.
+#### BigInt-Only Math
 
-### No Logic Wrappers
-Do not use `compareNumericStrings(a, b)`. Use `if (BigInt(a) > BigInt(b))`.
-</section>
+**Rule:** All financial calculations use `BigInt`. No exceptions.
 
-<section name="phase-2">
-## Phase 2: Time & Frontend Authority
+```typescript
+// ❌ Precision loss
+const total = parseFloat(a) + parseFloat(b)
 
-The backend is timezone-agnostic.
+// ✅ Exact arithmetic
+const total = BigInt(a) + BigInt(b)
+```
 
-### Direction of Knowledge
-- The Frontend calculates day boundaries (ET/UTC).
-- The Backend receives ISO strings.
+#### String Transport
 
-### Dependency Hygiene
-Backend must not import luxon or date-fns. Use native Date and Intl.
+**Rule:** Money values are strings at every API boundary.
 
-### Updated At
-Let the DB handle it. Do not manually send `updatedAt` in mutation payloads.
-</section>
+```typescript
+// ❌ Number in transport
+interface PaymentResponse { amount: number }
 
-<section name="phase-3">
-## Phase 3: API Contracts & Transport
+// ✅ String transport
+interface PaymentResponse { amount: string }
+```
 
-### Data Minimalism
-Return raw data only. No `fullName: "John Doe"` (UI composes this).
+**Exception:** Number conversion is allowed only at the final call to a 3rd-party SDK that requires it.
 
-### Status Codes over Booleans
-Remove `success: true`. The HTTP 200/tRPC response handles this.
+#### No Logic Wrappers
 
-### Barrel Hygiene
-An `index.ts` only exports its own directory. Never re-export external packages.
-</section>
+**Rule:** Use native operators directly. Do not abstract `BigInt` comparison.
 
-<section name="phase-4">
-## Phase 4: The Utility Purge
+```typescript
+// ❌ Unnecessary wrapper
+if (compareNumericStrings(a, b) > 0) { ... }
 
-### The 5-Line Rule
-If a function is < 5 lines, used < 3 times, or wraps native logic: Delete it. Inline it.
+// ✅ Native is clearer
+if (BigInt(a) > BigInt(b)) { ... }
+```
 
-### Indirection Kill Switch
-If an abstraction increases cognitive load without reducing complexity, kill it.
-</section>
+### No Interior Guard Spam
 
-<section name="summary">
-## Pre-Submit Mental Checklist
+**Rule:** If the database enforces `NOT NULL`, do not write `value ?? fallback` in application code.
 
-- [ ] Is this a "Recipe" (Top-to-bottom) or a "Maze" (Jumping files)?
-- [ ] Is financial math strictly BigInt?
-- [ ] Did I avoid "Defensive Bloat" (trusting the DB/Schema)?
-- [ ] Is the folder structure flat?
-- [ ] Did I remove `success: true` and unnecessary 5-line helpers?
-- [ ] Is `updatedAt` handled by MySQL?
+```typescript
+// ❌ DB has NOT NULL, but code guards anyway
+const name = user.name ?? 'Unknown'
 
-### Testing Policy
-We prioritize architectural correctness and DB constraints over unit test coverage. Reviewers: Do not flag a lack of tests if the logic follows the "Recipe" rule and validation is handled at the boundary.
+// ✅ Trust the constraint
+const name = user.name
+```
 
-### Agent Review Guidance
-If the codebase lacks tests, do not suggest adding them. Focus on standards compliance and logic correctness. Only mention testing if explicitly required by a standards section. Do not flag missing test coverage as an issue.
+**Exception:** Only guard when the source is genuinely unreliable (external APIs, user input before validation).
+
+### Time Handling
+
+**Rule:** Backend must not interpret timezones. Store and retrieve ISO strings only.
+
+```typescript
+// ❌ Backend calculates day boundaries
+const startOfDay = new Date().setHours(0, 0, 0, 0)
+
+// ✅ Frontend sends timezone-aware boundaries
+// Backend just stores/retrieves
+```
+
+**Rule:** Backend must not import `luxon` or `date-fns`. Use native `Date` and `Intl`.
+
+**Rationale:** Timezone logic belongs in the presentation layer. Backend stores and retrieves.
+
+### Updated At Handling
+
+**Rule:** Database manages `updatedAt`. Do not send in mutation payloads.
+
+```typescript
+// ❌ Manual update
+await db.update(users).set({ ...input, updatedAt: new Date() })
+
+// ✅ Let DB handle it
+await db.update(users).set(input) // DB trigger updates updatedAt
+```
+
+### API Contracts
+
+#### Status Over Boolean
+
+**Rule:** HTTP status and response presence indicate success. Remove `success: true`.
+
+```typescript
+// ❌ Redundant
+return { success: true, data: user }
+
+// ✅ Implicit success
+return user
+```
+
+#### Return Primitives
+
+**Rule:** Return primitive fields. Let callers compose derived values.
+
+```typescript
+// ❌ Computed in API
+return { fullName: `${user.firstName} ${user.lastName}` }
+
+// ✅ Primitives only
+return { firstName: user.firstName, lastName: user.lastName }
+```
 </section>

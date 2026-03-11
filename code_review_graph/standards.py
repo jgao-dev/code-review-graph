@@ -3,8 +3,8 @@
 Supports:
 - User-defined .code-review-standards.md in repo root
 - Package defaults (standards/default-standards.md)
-- XML-style section markers: <section name="phase-1">...</section>
-- Smart section selection based on file patterns
+- XML-style section markers: <section name="principles">...</section>
+- Smart section selection based on file location (apps/ vs packages/)
 """
 
 from __future__ import annotations
@@ -17,51 +17,21 @@ from .incremental import find_project_root
 
 
 # Section name constants
-SECTION_PHASE_0 = "phase-0"  # Structural Integrity & Anti-Bloat
-SECTION_PHASE_0_5 = "phase-0.5"  # Anti-Defensive Bloat Rule
-SECTION_PHASE_0_6 = "phase-0.6"  # Recipe Readability Rule
-SECTION_PHASE_1 = "phase-1"  # Financial Integrity
-SECTION_PHASE_2 = "phase-2"  # Time & Frontend Authority
-SECTION_PHASE_3 = "phase-3"  # API Contracts & Transport
-SECTION_PHASE_4 = "phase-4"  # Utility Purge
-SECTION_SUMMARY = "summary"  # Pre-Submit Checklist
+SECTION_PRINCIPLES = "principles"  # Always loaded
+SECTION_FRONTEND = "frontend"  # Loaded for apps/ files
+SECTION_BACKEND = "backend"  # Loaded for packages/ files
 
 ALL_SECTIONS = [
-    SECTION_PHASE_0,
-    SECTION_PHASE_0_5,
-    SECTION_PHASE_0_6,
-    SECTION_PHASE_1,
-    SECTION_PHASE_2,
-    SECTION_PHASE_3,
-    SECTION_PHASE_4,
-    SECTION_SUMMARY,
+    SECTION_PRINCIPLES,
+    SECTION_FRONTEND,
+    SECTION_BACKEND,
 ]
 
-# File pattern -> sections mapping for smart selection
-# Keys are regex patterns, values are list of applicable sections
-FILE_PATTERN_SECTIONS: dict[str, list[str]] = {
-    # Financial/billing/payment files get phase-1
-    r"(financial|money|payment|billing|invoice|transaction|price|cost|fee|balance)": [
-        SECTION_PHASE_1,
-    ],
-    # Time/date/schedule files get phase-2
-    r"(time|date|schedule|calendar|deadline|expiry|period)": [
-        SECTION_PHASE_2,
-    ],
-    # API/route/handler files get phase-3
-    r"(api|route|handler|controller|endpoint|resolver)": [
-        SECTION_PHASE_3,
-    ],
-    # Utility/helper/lib files get phase-0 and phase-4
-    r"(util|helper|lib|common|shared)": [
-        SECTION_PHASE_0,
-        SECTION_PHASE_4,
-    ],
-    # Constants/config files get phase-0
-    r"(constant|config|env)": [
-        SECTION_PHASE_0,
-    ],
-}
+# Directory patterns for domain selection
+# Files in apps/ get frontend standards, files in packages/ get backend standards
+FRONTEND_PATTERN = re.compile(r"^(apps|src/app)/", re.IGNORECASE)
+BACKEND_PATTERN = re.compile(r"^(packages|src)/", re.IGNORECASE)
+
 
 # Standards file locations
 _USER_STANDARDS_FILE = ".code-review-standards.md"
@@ -134,25 +104,29 @@ def parse_sections(content: str) -> dict[str, str]:
 def get_applicable_sections(file_paths: list[str]) -> list[str]:
     """Determine which standards sections apply to given files.
 
-    Uses file pattern matching to identify relevant sections.
-    Always includes the summary section as it contains the checklist.
+    Simple selection based on file location:
+    - apps/ files -> principles + frontend
+    - packages/ files -> principles + backend
+    - Unknown location -> principles only
 
     Args:
         file_paths: List of file paths (relative or absolute).
 
     Returns:
-        List of applicable section names, deduplicated.
+        List of applicable section names, always including principles.
     """
-    applicable = {SECTION_SUMMARY}  # Always include summary
+    applicable = {SECTION_PRINCIPLES}  # Always include principles
 
     for file_path in file_paths:
-        file_lower = file_path.lower()
+        # Normalize path separators
+        normalized = file_path.replace("\\", "/")
 
-        for pattern, sections in FILE_PATTERN_SECTIONS.items():
-            if re.search(pattern, file_lower):
-                applicable.update(sections)
+        if FRONTEND_PATTERN.search(normalized):
+            applicable.add(SECTION_FRONTEND)
+        elif BACKEND_PATTERN.search(normalized):
+            applicable.add(SECTION_BACKEND)
 
-    return sorted(applicable, key=lambda s: ALL_SECTIONS.index(s) if s in ALL_SECTIONS else 999)
+    return list(applicable)
 
 
 def get_review_standards(
@@ -166,7 +140,7 @@ def get_review_standards(
     Loads only the requested section for token efficiency.
 
     Args:
-        section_name: Section to load (e.g., "phase-0", "phase-1").
+        section_name: Section to load (e.g., "principles", "frontend", "backend").
                       If None, returns metadata and available sections.
         repo_root: Repository root path. Auto-detected if omitted.
         list_sections: If True, only list available sections without content.
@@ -252,7 +226,7 @@ def get_standards_for_files(
 ) -> dict[str, Any]:
     """Load applicable standards sections for a set of files.
 
-    Smart selection based on file patterns. Always includes summary.
+    Simple selection based on file location. Always includes principles.
 
     Args:
         file_paths: List of file paths to analyze.

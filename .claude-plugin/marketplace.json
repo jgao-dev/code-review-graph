@@ -1,5 +1,5 @@
 {
-  "name": "code-review-graph",
+  "name": "ezo-code-review-graph",
   "owner": {
     "name": "John Gao",
     "email": "johna@ezo.app"
@@ -11,7 +11,7 @@
   },
   "plugins": [
     {
-      "name": "code-review-graph",
+      "name": "ezo-code-review-graph",
       "source": "./",
       "description": "Persistent incremental knowledge graph for token-efficient, context-aware code reviews with Claude Code",
       "version": "1.7.2",

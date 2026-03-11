@@ -18,24 +18,30 @@ You operate on the **stack model** where:
 
 ## Review Process
 
-### Step 1: Identify the Stack Context
+### Step 1: Identify the Stack Parent
 
-Determine the parent for comparison:
+**CRITICAL:** You must find the correct parent to compare against. This affects all subsequent analysis.
 
-1. **For working changes (staged/unstaged):**
-   - Compare against HEAD (last commit on current branch)
-   - Use `git diff HEAD` for unstaged changes
-   - Use `git diff --cached` for staged changes
-   - Combined: `git diff HEAD` shows all uncommitted changes
+Use Bash to determine the parent reference:
 
-2. **For committed changes on a branch:**
-   - Find the parent branch: `git log --oneline --graph -10`
-   - Use `git merge-base main HEAD` to find common ancestor
-   - Compare against the parent commit in the stack
+```bash
+# For uncommitted changes (staged/unstaged)
+# Parent is always HEAD
+git rev-parse HEAD
 
-3. **For stacked branches (e.g., graphite/sapling):**
-   - Check for `.graphite` or similar stack configuration
-   - Use stack-specific commands if available
+# For stacked branches with Graphite
+gt parent 2>/dev/null || echo "no-graphite"
+
+# For stacked branches without Graphite
+# Find the parent branch by checking refs
+git log --oneline --graph -5
+git for-each-ref --format='%(refname:short)' refs/heads/
+```
+
+**Store the result as `STACK_PARENT`:**
+- Uncommitted changes: `STACK_PARENT=HEAD`
+- Stacked branches: `STACK_PARENT=<parent-branch-name>` (e.g., `feature-a` if stack is `main <- feature-a <- feature-b`)
+- If parent cannot be determined, fall back to `git merge-base main HEAD`
 
 ### Step 2: Ensure Graph is Current
 
@@ -45,14 +51,16 @@ build_or_update_graph_tool()
 
 This performs an incremental update to reflect current state.
 
-### Step 3: Get Review Context
+### Step 3: Get Review Context with Correct Base
+
+**Pass the `base` parameter from Step 1:**
 
 ```
-get_review_context_tool(include_standards=True)
+get_review_context_tool(base=STACK_PARENT, include_standards=True)
 ```
 
 This returns:
-- Changed files (auto-detected from git)
+- Changed files (diffed against STACK_PARENT)
 - Impacted nodes and files (blast radius)
 - Source code snippets for changed areas
 - Review guidance and auto-selected standards
@@ -116,9 +124,8 @@ Structure your output as:
 - **LSP diagnostics**: <unresolved errors/warnings>
 
 ### Standards Compliance
-- Phase 0 (Structure): status
-- Phase 1 (Financial): status (if applicable)
-- Other phases: status (if applicable)
+- Principles: status (always checked)
+- Frontend/Backend: status (based on file location)
 
 ### Critical Issues
 1. <issue with file:line reference>
@@ -135,18 +142,15 @@ Structure your output as:
 
 ## Standards Reference
 
-Standards are auto-selected based on file patterns:
+Standards are auto-selected based on file location:
 
-| File Pattern | Sections Loaded |
-|--------------|-----------------|
-| `*financial*`, `*money*`, `*payment*`, `*billing*` | phase-1 (Financial Integrity) |
-| `*time*`, `*date*`, `*schedule*` | phase-2 (Time & Frontend Authority) |
-| `*api*`, `*route*`, `*handler*` | phase-3 (API Contracts) |
-| `*util*`, `*helper*`, `*lib*` | phase-0, phase-4 (Structure + Utility Purge) |
-| `*constant*`, `*config*` | phase-0 (Structural Integrity) |
-| All files | summary (Pre-Submit Checklist) |
+| File Location | Sections Loaded |
+|----------------|------------------|
+| `apps/**` | principles + frontend |
+| `packages/**` | principles + backend |
+| Unknown location | principles only |
 
-Override with: `get_docs_section_tool(section_name="phase-X")`
+Override with: `get_review_standards_tool(section_name="frontend")` or `get_review_standards_tool(section_name="backend")`
 
 ## Diff Stacking Details
 

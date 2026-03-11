@@ -16,7 +16,5 @@
       "command": "uvx",
       "args": ["code-review-graph", "serve"]
     }
-  },
-  "skills": "./skills/",
-  "agents": "./agents/"
+  }
 }
