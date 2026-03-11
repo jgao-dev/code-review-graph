@@ -16,6 +16,7 @@ from .tools import (
     get_docs_section,
     get_impact_radius,
     get_review_context,
+    get_review_standards,
     list_graph_stats,
     query_graph,
     semantic_search_nodes,
@@ -111,6 +112,8 @@ def get_review_context_tool(
     max_lines_per_file: int = 200,
     repo_root: Optional[str] = None,
     base: str = "HEAD~1",
+    include_standards: bool = True,
+    standards_sections: Optional[list[str]] = None,
 ) -> dict:
     """Generate a focused, token-efficient review context for code changes.
 
@@ -124,11 +127,14 @@ def get_review_context_tool(
         max_lines_per_file: Max source lines per file. Default: 200.
         repo_root: Repository root path. Auto-detected if omitted.
         base: Git ref for change detection. Default: HEAD~1.
+        include_standards: Include applicable code review standards. Default: True.
+        standards_sections: Specific standards sections to include. Auto-selects if None.
     """
     return get_review_context(
         changed_files=changed_files, max_depth=max_depth,
         include_source=include_source, max_lines_per_file=max_lines_per_file,
         repo_root=repo_root, base=base,
+        include_standards=include_standards, standards_sections=standards_sections,
     )
 
 
@@ -205,6 +211,30 @@ def get_docs_section_tool(
         section_name: The section to retrieve (e.g. "review-delta", "usage").
     """
     return get_docs_section(section_name=section_name)
+
+
+@mcp.tool()
+def get_review_standards_tool(
+    section_name: Optional[str] = None,
+    repo_root: Optional[str] = None,
+    list_sections: bool = False,
+) -> dict:
+    """Load custom code review standards for the review workflow.
+
+    Auto-discovers from .code-review-standards.md or uses package defaults.
+    Loads only the requested section for token efficiency.
+
+    Args:
+        section_name: Section to load (e.g., "phase-0", "financial-integrity").
+                      None returns metadata and available sections.
+        repo_root: Repository root path. Auto-detected if omitted.
+        list_sections: If True, only list available sections without content.
+    """
+    return get_review_standards(
+        section_name=section_name,
+        repo_root=repo_root,
+        list_sections=list_sections,
+    )
 
 
 def main() -> None:

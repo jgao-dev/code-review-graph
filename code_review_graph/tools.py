@@ -1,6 +1,6 @@
 """MCP tool definitions for the Code Review Graph server.
 
-Exposes 8 tools:
+Exposes 9 tools:
 1. build_or_update_graph  - full or incremental build
 2. get_impact_radius      - blast radius from changed files
 3. query_graph            - predefined graph queries
@@ -9,6 +9,7 @@ Exposes 8 tools:
 6. list_graph_stats       - aggregate statistics
 7. embed_graph            - compute vector embeddings for semantic search
 8. get_docs_section       - token-optimized documentation retrieval
+9. get_review_standards   - load custom code review standards
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from .incremental import (
     get_staged_and_unstaged,
     incremental_update,
 )
+from .standards import get_applicable_sections, get_review_standards
 
 
 def _get_store(repo_root: str | None = None) -> tuple[GraphStore, Path]:
@@ -320,6 +322,8 @@ def get_review_context(
     max_lines_per_file: int = 200,
     repo_root: str | None = None,
     base: str = "HEAD~1",
+    include_standards: bool = True,
+    standards_sections: list[str] | None = None,
 ) -> dict[str, Any]:
     """Generate a focused review context from changed files.
 
@@ -332,9 +336,12 @@ def get_review_context(
         max_lines_per_file: Max source lines per file in output (default: 200).
         repo_root: Repository root path. Auto-detected if omitted.
         base: Git ref for change detection (default: HEAD~1).
+        include_standards: Whether to include applicable code review standards (default: True).
+        standards_sections: Specific standards sections to include. If None, auto-selects
+                          based on file patterns (e.g., financial files get phase-1).
 
     Returns:
-        Structured review context with subgraph, source snippets, and review guidance.
+        Structured review context with subgraph, source snippets, review guidance, and standards.
     """
     store, root = _get_store(repo_root)
     try:
@@ -391,15 +398,49 @@ def get_review_context(
         guidance = _generate_review_guidance(impact, changed_files)
         context["review_guidance"] = guidance
 
+        # Load applicable standards if requested
+        standards_content: dict[str, str] = {}
+        if include_standards:
+            from pathlib import Path as _PathLib
+            root_path = root
+
+            # Determine which sections to load
+            if standards_sections:
+                sections_to_load = standards_sections
+            else:
+                # Auto-select based on file patterns
+                sections_to_load = get_applicable_sections(changed_files)
+
+            # Load each section
+            for section in sections_to_load:
+                std_result = get_review_standards(
+                    section_name=section,
+                    repo_root=str(root_path) if root_path else None,
+                )
+                if std_result["status"] == "ok":
+                    standards_content[section] = std_result["content"]
+
+            if standards_content:
+                context["standards"] = standards_content
+
         summary_parts = [
             f"Review context for {len(changed_files)} changed file(s):",
             f"  - {len(impact['changed_nodes'])} directly changed nodes",
             f"  - {len(impact['impacted_nodes'])} impacted nodes"
             f" in {len(impact['impacted_files'])} files",
+        ]
+
+        if standards_content:
+            summary_parts.append(
+                f"  - {len(standards_content)} standards section(s) loaded: "
+                + ", ".join(standards_content.keys())
+            )
+
+        summary_parts.extend([
             "",
             "Review guidance:",
             guidance,
-        ]
+        ])
 
         return {
             "status": "ok",
@@ -447,23 +488,6 @@ def _extract_relevant_lines(
 def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
     """Generate review guidance based on the impact analysis."""
     guidance_parts = []
-
-    # Check for test coverage
-    changed_funcs = [
-        n for n in impact["changed_nodes"] if n.kind == "Function"
-    ]
-    test_edges = [e for e in impact["edges"] if e.kind == "TESTED_BY"]
-    tested_funcs = {e.source_qualified for e in test_edges}
-
-    untested = [
-        f for f in changed_funcs
-        if f.qualified_name not in tested_funcs and not f.is_test
-    ]
-    if untested:
-        guidance_parts.append(
-            f"- {len(untested)} changed function(s) lack test coverage: "
-            + ", ".join(n.name for n in untested[:5])
-        )
 
     # Check for wide blast radius
     if len(impact["impacted_nodes"]) > 20:
@@ -755,3 +779,36 @@ def get_docs_section(section_name: str) -> dict[str, Any]:
             f"Available: {', '.join(available)}"
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Tool 9: get_review_standards
+# ---------------------------------------------------------------------------
+
+
+def get_review_standards(
+    section_name: str | None = None,
+    repo_root: str | None = None,
+    list_sections: bool = False,
+) -> dict[str, Any]:
+    """Load code review standards from user file or defaults.
+
+    Auto-discovers from .code-review-standards.md or uses package defaults.
+    Loads only the requested section for token efficiency.
+
+    Args:
+        section_name: Section to load (e.g., "phase-0", "financial-integrity").
+                      If None, returns metadata and available sections.
+        repo_root: Repository root path. Auto-detected if omitted.
+        list_sections: If True, only list available sections without content.
+
+    Returns:
+        Standards content or metadata dict.
+    """
+    from .standards import get_review_standards as _get_review_standards
+
+    return _get_review_standards(
+        section_name=section_name,
+        repo_root=repo_root,
+        list_sections=list_sections,
+    )

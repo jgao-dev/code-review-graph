@@ -10,7 +10,7 @@ readme = {file = "README.md", content-type = "text/markdown"}
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "Tirth" },
+    { name = "John Gao", email = "john@ezo.ai" },
 ]
 keywords = ["code-review", "knowledge-graph", "tree-sitter", "claude-code", "mcp"]
 classifiers = [
@@ -54,6 +54,7 @@ packages = ["code_review_graph"]
 include = [
     "code_review_graph/",
     "skills/",
+    "standards/",
     ".claude-plugin/",
     "docs/",
     "hooks/",

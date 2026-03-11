@@ -22,7 +22,7 @@ Never include full files unless explicitly asked.
 </section>
 
 <section name="commands">
-MCP tools: build_or_update_graph_tool, get_impact_radius_tool, query_graph_tool, get_review_context_tool, semantic_search_nodes_tool, embed_graph_tool, list_graph_stats_tool, get_docs_section_tool
+MCP tools: build_or_update_graph_tool, get_impact_radius_tool, query_graph_tool, get_review_context_tool, semantic_search_nodes_tool, embed_graph_tool, list_graph_stats_tool, get_docs_section_tool, get_review_standards_tool
 Skills: build-graph, review-delta, review-pr
 CLI: code-review-graph [install|init|build|update|status|watch|visualize|serve]
 </section>
@@ -53,6 +53,15 @@ DB lock: SQLite WAL mode, auto-recovers. Only one build at a time.
 Large repos: First build 30-60s. Incremental <2s. Add patterns to .code-review-graphignore.
 Stale graph: Run /code-review-graph:build-graph manually.
 Missing nodes: Check language support + ignore patterns. Use full_rebuild=True.
+</section>
+
+<section name="standards">
+Review standards: Use get_review_standards_tool(section_name="phase-X").
+Common sections: phase-0, phase-0.5, phase-0.6, phase-1, phase-2, phase-3, phase-4, summary.
+User override: Create .code-review-standards.md in repo root.
+Format: Sectioned markdown with <section name="..."> tags.
+Auto-selection: get_review_context_tool(include_standards=True) loads relevant sections based on file patterns.
+Patterns: *financial*→phase-1, *time*→phase-2, *api*→phase-3, *util*→phase-0,phase-4.
 </section>
 
 **Instruction to Claude Code (always follow):**

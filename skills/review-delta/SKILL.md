@@ -14,33 +14,61 @@ Perform a focused, token-efficient code review of only the changed code and its 
 
 1. **Ensure the graph is current** by calling `build_or_update_graph_tool()` (incremental update).
 
-2. **Get review context** by calling `get_review_context_tool()`. This returns:
+2. **Get review context** by calling `get_review_context_tool(include_standards=True)`. This returns:
    - Changed files (auto-detected from git diff)
    - Impacted nodes and files (blast radius)
    - Source code snippets for changed areas
-   - Review guidance (test coverage gaps, wide impact warnings, inheritance concerns)
+   - Review guidance (wide impact warnings, inheritance concerns)
+   - **Auto-selected standards** based on file patterns (see below)
 
-3. **Analyze the blast radius** by reviewing the `impacted_nodes` and `impacted_files` in the context. Focus on:
+3. **Load additional standards** if needed. Standards are auto-selected based on file patterns:
+   | File Pattern | Sections Loaded |
+   |--------------|-----------------|
+   | `*financial*`, `*money*`, `*payment*`, `*billing*` | phase-1 (Financial Integrity) |
+   | `*time*`, `*date*`, `*schedule*` | phase-2 (Time & Frontend Authority) |
+   | `*api*`, `*route*`, `*handler*` | phase-3 (API Contracts) |
+   | `*util*`, `*helper*`, `*lib*` | phase-0, phase-4 (Structure + Utility Purge) |
+   | `*constant*`, `*config*` | phase-0 (Structural Integrity) |
+   | All files | summary (Pre-Submit Checklist) |
+
+   Override with: `get_review_standards_tool(section_name="phase-X")`
+
+4. **Analyze the blast radius** by reviewing the `impacted_nodes` and `impacted_files` in the context. Focus on:
    - Functions whose callers changed (may need signature/behavior verification)
    - Classes with inheritance changes (Liskov substitution concerns)
    - Files with many dependents (high-risk changes)
 
-4. **Perform the review** using the context. For each changed file:
+5. **Perform the review** using the context and standards. For each changed file:
    - Review the source snippet for correctness, style, and potential bugs
+   - Check against loaded standards sections for violations
    - Check if impacted callers/dependents need updates
-   - Verify test coverage using `query_graph_tool(pattern="tests_for", target=<function_name>)`
-   - Flag any untested changed functions
 
-5. **Report findings** in a structured format:
+6. **Report findings** in a structured format:
    - **Summary**: One-line overview of the changes
    - **Risk level**: Low / Medium / High (based on blast radius)
-   - **Issues found**: Bugs, style issues, missing tests
+   - **Standards violations**: Organized by phase (if any)
+   - **Issues found**: Bugs, style issues, standards violations
    - **Blast radius**: List of impacted files/functions
    - **Recommendations**: Actionable suggestions
+
+## Standards Reference
+
+Common sections available:
+- `phase-0`: Structural Integrity & Anti-Bloat
+- `phase-0.5`: Anti-Defensive Bloat Rule
+- `phase-0.6`: Recipe Readability Rule
+- `phase-1`: Financial Integrity (BigInt only, no parseFloat)
+- `phase-2`: Time & Frontend Authority
+- `phase-3`: API Contracts & Transport
+- `phase-4`: Utility Purge
+- `summary`: Pre-Submit Checklist (includes Testing Policy)
+
+### Testing Policy Note
+If the codebase lacks tests, do not suggest adding them. Focus on standards compliance and logic correctness. Only mention testing if explicitly required by the loaded standards sections.
 
 ## Advantages Over Full-Repo Review
 
 - Only sends changed + impacted code to the model (5-10x fewer tokens)
 - Automatically identifies blast radius without manual file searching
 - Provides structural context (who calls what, inheritance chains)
-- Flags untested functions automatically
+- Auto-loads relevant coding standards based on file patterns

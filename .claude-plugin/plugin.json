@@ -3,12 +3,12 @@
   "description": "Persistent incremental knowledge graph for token-efficient, context-aware code reviews with Claude Code",
   "version": "1.7.2",
   "author": {
-    "name": "Tirth Kanani",
-    "email": "tirthkanani18@gmail.com",
-    "url": "https://github.com/tirth8205"
+    "name": "John Gao",
+    "email": "john@ezo.app",
+    "url": "https://ezo.app"
   },
-  "homepage": "https://github.com/tirth8205/code-review-graph",
-  "repository": "https://github.com/tirth8205/code-review-graph",
+  "homepage": "https://github.com/jgao-dev/code-review-graph",
+  "repository": "https://github.com/jgao-dev/code-review-graph",
   "license": "MIT",
   "keywords": ["code-review", "knowledge-graph", "incremental", "tree-sitter", "mcp", "claude-code"],
   "mcpServers": {
