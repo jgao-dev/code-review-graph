@@ -33,60 +33,36 @@ If there are uncommitted changes (staged or unstaged), set `STACK_PARENT=HEAD` a
 
 #### Step 1b: Detect Parent for Committed Changes on a Branch
 
-Run these commands in order until you get a valid parent:
+**Use Graphite CLI exclusively:**
 
 ```bash
-# 1. Try Graphite (most common stacking tool)
+# Try Graphite - the only supported stacking tool
 gt parent 2>/dev/null
-
-# 2. Try Sapling
-sl parents -T "{node|short}" 2>/dev/null | head -1
-
-# 3. Try stgit (Stacked Git)
-stg parent 2>/dev/null
-
-# 4. Try Git Branch Stack (branch naming convention)
-# Check if current branch follows pattern like feature-a-part2 or feature-a/v2
-current_branch=$(git rev-parse --abbrev-ref HEAD)
-echo "$current_branch" | grep -E '^(.+)-part[0-9]+$' | sed 's/-part[0-9]*$//' 2>/dev/null
-echo "$current_branch" | grep -E '^(.+)/v[0-9]+$' | sed 's:/v[0-9]*$::' 2>/dev/null
-
-# 5. Try finding parent via branch tracking
-git rev-parse --abbrev-ref @{upstream} 2>/dev/null
-
-# 6. Try finding parent via branch-point
-# Look for where this branch diverged from another branch
-git branch -a --format='%(refname:short)' | while read branch; do
-  if [ "$branch" != "$(git rev-parse --abbrev-ref HEAD)" ]; then
-    merge_base=$(git merge-base HEAD "$branch" 2>/dev/null)
-    head_commit=$(git rev-parse HEAD)
-    if [ "$merge_base" != "$head_commit" ]; then
-      echo "$branch:$merge_base"
-    fi
-  fi
-done
-
-# 7. Fallback: Find most recent branch-point ancestor
-# This finds commits that are on other branches
-git log --oneline --all --simplify-by-decoration -10
 ```
 
-#### Step 1c: Validate and Store the Parent
+**If Graphite is not available or returns no parent:**
+
+DO NOT fall back to other detection methods. Instead, ask the user:
+
+> "I couldn't detect the parent branch using Graphite CLI. Please provide the parent branch name for this stacked diff. For example:
+> - If this is branch `feature-b` stacked on `feature-a`, provide: `feature-a`
+> - If this is the first branch in your stack, the parent is likely `dev`
+>
+> What is the parent branch for this review?"
+
+**Store the result as `STACK_PARENT`:**
+- Uncommitted changes: `STACK_PARENT=HEAD`
+- Graphite-detected parent: `STACK_PARENT=<parent-branch>`
+- User-specified parent: `STACK_PARENT=<user-provided-branch>`
 
 **Validation Rules:**
 1. The parent must be an ancestor of HEAD: `git merge-base --is-ancestor <parent> HEAD`
 2. The parent must have commits between it and HEAD: `git log <parent>..HEAD --oneline` should not be empty
 3. If using a branch name, verify it exists: `git rev-parse --verify <parent>`
 
-**Store the result as `STACK_PARENT`:**
-- Uncommitted changes: `STACK_PARENT=HEAD`
-- Stacked branches with detected parent: `STACK_PARENT=<parent-branch-or-commit>`
-- If parent cannot be determined: Ask the user for clarification - DO NOT silently fall back to main
+If validation fails, report the error and ask the user to verify the parent branch.
 
-**WARNING:** If you must fall back to `main`/`master`, explicitly warn the user:
-> "Could not determine stack parent. Defaulting to 'main'. This will show changes from the entire stack, not just this branch. To review against the correct parent, specify it manually or ensure your stacking tool is configured."
-
-#### Step 1d: Confirm Stack Context
+#### Step 1c: Confirm Stack Context
 
 Before proceeding, show the user what will be reviewed:
 
@@ -231,35 +207,36 @@ git diff --name-only HEAD
 
 ### Working with Stacked Branches
 
-For stacked diff workflows, always try these tools in order:
+For stacked diff workflows, use Graphite CLI:
 
 | Tool | Command | Notes |
 |------|---------|-------|
-| Graphite | `gt parent` | Most common stacking CLI |
-| Sapling | `sl parents` | Meta's stacking tool |
-| Stacked Git | `stg parent` | Patch-based stacking |
-| Git upstream | `git rev-parse @{upstream}` | If branch tracks another branch |
+| Graphite | `gt parent` | Required - ask user if not available |
+
+If Graphite CLI is not available or cannot determine the parent, prompt the user to specify it manually.
+
+**Never assume a parent** - always get explicit confirmation from Graphite or the user.
 
 ### Understanding Stack Position
 
 When on a stacked branch, visualize the stack:
 
 ```
-main <- feature-a <- feature-b <- feature-c
-                     ↑
-                  current branch
+dev <- feature-a <- feature-b <- feature-c
+                       ↑
+                    current branch
 ```
 
-For `feature-b`, the parent is `feature-a` (not `main`).
+For `feature-b`, the parent is `feature-a` (not `dev`).
 Reviewing `feature-b` should show only changes on that branch.
 
-### Common Stack Detection Failures
+### Stack Detection Failures
 
-If automatic detection fails, the user should provide:
-- The parent branch name
-- Or the merge-base commit where their branch diverged
+If Graphite CLI is not available or cannot determine the parent:
+- Ask the user to specify the parent branch name
+- For the first branch in a stack, the parent is typically `dev`
 
-**Never assume main/master** without explicit warning.
+**Never assume a parent** - always get explicit confirmation from the user.
 
 ## Graph Query Utilities
 
@@ -281,14 +258,15 @@ semantic_search_nodes_tool(query="authentication", kind="Function")
 
 ## Important Guidelines
 
-1. **Parent detection is critical**: Wrong parent = wrong review. Always validate the detected parent before proceeding. If unsure, ask the user.
-2. **Never silently fallback to main**: Fallback to main breaks the stacking workflow. Always warn the user and give them a chance to specify the correct parent.
-3. **Focus on the stack**: Always compare against the immediate parent in the stack, not main
-4. **Token efficiency**: Use graph tools to get only impacted code, not full files
-5. **Standards-first**: Check auto-loaded standards before reviewing
-6. **Blast radius matters**: High-impact changes (many dependents) need more scrutiny
-7. **LSP integration**: Always check for unresolved diagnostics
-8. **No test suggestions**: Do not suggest adding tests unless explicitly required by standards
+1. **Parent detection is critical**: Wrong parent = wrong review. Always get parent from Graphite CLI or prompt the user.
+2. **Graphite-only detection**: Use only `gt parent` for automatic detection. If it fails, ask the user to specify the parent manually.
+3. **Never assume a parent**: Do not fall back to `main` or guess. Always get explicit confirmation from Graphite or the user.
+4. **Focus on the stack**: Always compare against the immediate parent in the stack, not main.
+5. **Token efficiency**: Use graph tools to get only impacted code, not full files.
+6. **Standards-first**: Check auto-loaded standards before reviewing.
+7. **Blast radius matters**: High-impact changes (many dependents) need more scrutiny.
+8. **LSP integration**: Always check for unresolved diagnostics.
+9. **No test suggestions**: Do not suggest adding tests unless explicitly required by standards.
 
 ## Testing Policy Note
 
