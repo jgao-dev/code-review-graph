@@ -40,19 +40,31 @@ If there are uncommitted changes (staged or unstaged), set `STACK_PARENT=HEAD` a
 gt parent 2>/dev/null
 ```
 
+**CRITICAL: Trust Graphite's output completely.**
+
+- If `gt parent` returns `feature-a`, use `feature-a` as the parent
+- If `gt parent` returns `dev`, use `dev` as the parent
+- Do NOT substitute or assume `dev` when Graphite returns something else
+
+The parent in a stack is typically the **previous branch**, not `dev`. For example:
+```
+dev <- feature-a <- feature-b <- feature-c
+```
+- On `feature-b`, the parent is `feature-a` (NOT `dev`)
+- On `feature-c`, the parent is `feature-b` (NOT `dev`)
+- Only the first branch (`feature-a`) has `dev` as its parent
+
 **If Graphite is not available or returns no parent:**
 
-DO NOT fall back to other detection methods. Instead, ask the user:
+DO NOT fall back to other detection methods or assume `dev`. Ask the user:
 
-> "I couldn't detect the parent branch using Graphite CLI. Please provide the parent branch name for this stacked diff. For example:
-> - If this is branch `feature-b` stacked on `feature-a`, provide: `feature-a`
-> - If this is the first branch in your stack, the parent is likely `dev`
+> "I couldn't detect the parent branch using Graphite CLI. Please provide the parent branch name for this stacked diff.
 >
 > What is the parent branch for this review?"
 
 **Store the result as `STACK_PARENT`:**
 - Uncommitted changes: `STACK_PARENT=HEAD`
-- Graphite-detected parent: `STACK_PARENT=<parent-branch>`
+- Graphite-detected parent: `STACK_PARENT=<exact-output-from-gt-parent>`
 - User-specified parent: `STACK_PARENT=<user-provided-branch>`
 
 **Validation Rules:**
@@ -234,7 +246,7 @@ Reviewing `feature-b` should show only changes on that branch.
 
 If Graphite CLI is not available or cannot determine the parent:
 - Ask the user to specify the parent branch name
-- For the first branch in a stack, the parent is typically `dev`
+- The parent is the previous branch in the stack (NOT necessarily `dev`)
 
 **Never assume a parent** - always get explicit confirmation from the user.
 
@@ -259,7 +271,8 @@ semantic_search_nodes_tool(query="authentication", kind="Function")
 ## Important Guidelines
 
 1. **Parent detection is critical**: Wrong parent = wrong review. Always get parent from Graphite CLI or prompt the user.
-2. **Graphite-only detection**: Use only `gt parent` for automatic detection. If it fails, ask the user to specify the parent manually.
+2. **Trust Graphite's output**: If `gt parent` returns a branch, use it exactly. Do NOT substitute `dev` or assume a different parent.
+3. **Graphite-only detection**: Use only `gt parent` for automatic detection. If it fails, ask the user to specify the parent manually.
 3. **Never assume a parent**: Do not fall back to `main` or guess. Always get explicit confirmation from Graphite or the user.
 4. **Focus on the stack**: Always compare against the immediate parent in the stack, not main.
 5. **Token efficiency**: Use graph tools to get only impacted code, not full files.

@@ -685,6 +685,95 @@ function render(state: State) {
 ```
 
 **Rationale:** Booleans allow impossible states. Discriminated unions make invalid states unrepresentable and enable exhaustive type narrowing.
+
+### Arrow Functions First
+
+**Rule:** Use arrow functions by default in frontend code. Only use function declarations when hoisting is required.
+
+```typescript
+// ❌ Function declaration
+function PageContainer({ children }: { children: React.ReactNode }) {
+  return <div>{children}</div>
+}
+
+// ✅ Arrow function
+const PageContainer = ({ children }: { children: React.ReactNode }) => {
+  return <div>{children}</div>
+}
+
+// ✅ Arrow function for callbacks
+const handleSubmit = async (data: FormData) => {
+  await api.submit(data)
+}
+
+// ✅ Arrow function for handlers
+const handleClick = () => setIsOpen(!isOpen)
+```
+
+**Exceptions:**
+- React components that use `forwardRef` may need function declarations
+- Files where hoisting improves readability (rare)
+
+**Rationale:** Arrow functions provide consistent `this` binding, are more concise, and align with modern React patterns. Function declarations offer no advantage in typical frontend code.
+
+### Concise Arrow Syntax
+
+**Rule:** Prefer implicit return (concise syntax) for simple arrow functions. Only use block syntax when necessary.
+
+```typescript
+// ❌ Unnecessary block syntax for simple expressions
+const columns = useMemo(() => {
+  return [
+    { id: 'name', header: 'Name' },
+    { id: 'email', header: 'Email' }
+  ]
+}, [])
+
+// ❌ Unnecessary block syntax for callbacks
+const names = items.map((item) => {
+  return item.name
+})
+
+// ❌ Unnecessary block syntax for computed values
+const filtered = items.filter((item) => {
+  return item.isActive
+})
+
+// ✅ Concise syntax for simple expressions
+const columns = useMemo(() => [
+  { id: 'name', header: 'Name' },
+  { id: 'email', header: 'Email' }
+], [])
+
+// ✅ Concise syntax for callbacks
+const names = items.map((item) => item.name)
+
+// ✅ Concise syntax for filters
+const filtered = items.filter((item) => item.isActive)
+
+// ✅ Block syntax for complex logic
+const total = useMemo(() => {
+  const subtotal = items.reduce((sum, item) => sum + item.price, 0)
+  const tax = subtotal * 0.1
+  const shipping = subtotal > 100 ? 0 : 10
+  return subtotal + tax + shipping
+}, [items])
+
+// ✅ Block syntax for async functions
+const fetchData = async () => {
+  const response = await fetch('/api/data')
+  const data = await response.json()
+  return data
+}
+```
+
+**When to use block syntax:**
+- Multiple statements before the return
+- Variable declarations needed
+- Async functions (always use block)
+- Complex logic that benefits from intermediate variables
+
+**Rationale:** Concise syntax reduces visual noise for simple operations. Block syntax should signal complexity—if a one-liner needs braces, consider if the logic is too complex.
 </section>
 
 <section name="backend">
