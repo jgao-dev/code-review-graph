@@ -22,26 +22,81 @@ You operate on the **stack model** where:
 
 **CRITICAL:** You must find the correct parent to compare against. This affects all subsequent analysis.
 
-Use Bash to determine the parent reference:
+#### Step 1a: Check for Uncommitted Changes First
 
 ```bash
-# For uncommitted changes (staged/unstaged)
-# Parent is always HEAD
-git rev-parse HEAD
-
-# For stacked branches with Graphite
-gt parent 2>/dev/null || echo "no-graphite"
-
-# For stacked branches without Graphite
-# Find the parent branch by checking refs
-git log --oneline --graph -5
-git for-each-ref --format='%(refname:short)' refs/heads/
+# Check if there are any uncommitted changes
+git diff --quiet HEAD && echo "no-uncommitted" || echo "has-uncommitted"
 ```
+
+If there are uncommitted changes (staged or unstaged), set `STACK_PARENT=HEAD` and proceed to Step 2. The parent for working directory changes is always HEAD.
+
+#### Step 1b: Detect Parent for Committed Changes on a Branch
+
+Run these commands in order until you get a valid parent:
+
+```bash
+# 1. Try Graphite (most common stacking tool)
+gt parent 2>/dev/null
+
+# 2. Try Sapling
+sl parents -T "{node|short}" 2>/dev/null | head -1
+
+# 3. Try stgit (Stacked Git)
+stg parent 2>/dev/null
+
+# 4. Try Git Branch Stack (branch naming convention)
+# Check if current branch follows pattern like feature-a-part2 or feature-a/v2
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+echo "$current_branch" | grep -E '^(.+)-part[0-9]+$' | sed 's/-part[0-9]*$//' 2>/dev/null
+echo "$current_branch" | grep -E '^(.+)/v[0-9]+$' | sed 's:/v[0-9]*$::' 2>/dev/null
+
+# 5. Try finding parent via branch tracking
+git rev-parse --abbrev-ref @{upstream} 2>/dev/null
+
+# 6. Try finding parent via branch-point
+# Look for where this branch diverged from another branch
+git branch -a --format='%(refname:short)' | while read branch; do
+  if [ "$branch" != "$(git rev-parse --abbrev-ref HEAD)" ]; then
+    merge_base=$(git merge-base HEAD "$branch" 2>/dev/null)
+    head_commit=$(git rev-parse HEAD)
+    if [ "$merge_base" != "$head_commit" ]; then
+      echo "$branch:$merge_base"
+    fi
+  fi
+done
+
+# 7. Fallback: Find most recent branch-point ancestor
+# This finds commits that are on other branches
+git log --oneline --all --simplify-by-decoration -10
+```
+
+#### Step 1c: Validate and Store the Parent
+
+**Validation Rules:**
+1. The parent must be an ancestor of HEAD: `git merge-base --is-ancestor <parent> HEAD`
+2. The parent must have commits between it and HEAD: `git log <parent>..HEAD --oneline` should not be empty
+3. If using a branch name, verify it exists: `git rev-parse --verify <parent>`
 
 **Store the result as `STACK_PARENT`:**
 - Uncommitted changes: `STACK_PARENT=HEAD`
-- Stacked branches: `STACK_PARENT=<parent-branch-name>` (e.g., `feature-a` if stack is `main <- feature-a <- feature-b`)
-- If parent cannot be determined, fall back to `git merge-base main HEAD`
+- Stacked branches with detected parent: `STACK_PARENT=<parent-branch-or-commit>`
+- If parent cannot be determined: Ask the user for clarification - DO NOT silently fall back to main
+
+**WARNING:** If you must fall back to `main`/`master`, explicitly warn the user:
+> "Could not determine stack parent. Defaulting to 'main'. This will show changes from the entire stack, not just this branch. To review against the correct parent, specify it manually or ensure your stacking tool is configured."
+
+#### Step 1d: Confirm Stack Context
+
+Before proceeding, show the user what will be reviewed:
+
+```bash
+# Show the diff range being reviewed
+git log --oneline $STACK_PARENT..HEAD 2>/dev/null || echo "Working directory changes"
+git diff --stat $STACK_PARENT
+```
+
+This confirms the scope and allows the user to catch incorrect parent detection early.
 
 ### Step 2: Ensure Graph is Current
 
@@ -172,32 +227,39 @@ git diff HEAD
 git diff --name-only HEAD
 ```
 
+**For uncommitted changes, `STACK_PARENT` is always `HEAD`.**
+
 ### Working with Stacked Branches
 
-For stacked diff workflows (graphite, sapling, etc.):
+For stacked diff workflows, always try these tools in order:
 
-1. Identify stack position:
-   ```bash
-   # Graphite
-   gt log
+| Tool | Command | Notes |
+|------|---------|-------|
+| Graphite | `gt parent` | Most common stacking CLI |
+| Sapling | `sl parents` | Meta's stacking tool |
+| Stacked Git | `stg parent` | Patch-based stacking |
+| Git upstream | `git rev-parse @{upstream}` | If branch tracks another branch |
 
-   # Git branch graph
-   git log --oneline --graph --all -15
-   ```
+### Understanding Stack Position
 
-2. Find parent in stack:
-   ```bash
-   # For graphite
-   gt parent
+When on a stacked branch, visualize the stack:
 
-   # Generic approach
-   git merge-base main HEAD
-   ```
+```
+main <- feature-a <- feature-b <- feature-c
+                     ↑
+                  current branch
+```
 
-3. Compare against parent:
-   ```bash
-   git diff <parent-branch>...HEAD
-   ```
+For `feature-b`, the parent is `feature-a` (not `main`).
+Reviewing `feature-b` should show only changes on that branch.
+
+### Common Stack Detection Failures
+
+If automatic detection fails, the user should provide:
+- The parent branch name
+- Or the merge-base commit where their branch diverged
+
+**Never assume main/master** without explicit warning.
 
 ## Graph Query Utilities
 
@@ -219,12 +281,14 @@ semantic_search_nodes_tool(query="authentication", kind="Function")
 
 ## Important Guidelines
 
-1. **Focus on the stack**: Always compare against the immediate parent in the stack, not main
-2. **Token efficiency**: Use graph tools to get only impacted code, not full files
-3. **Standards-first**: Check auto-loaded standards before reviewing
-4. **Blast radius matters**: High-impact changes (many dependents) need more scrutiny
-5. **LSP integration**: Always check for unresolved diagnostics
-6. **No test suggestions**: Do not suggest adding tests unless explicitly required by standards
+1. **Parent detection is critical**: Wrong parent = wrong review. Always validate the detected parent before proceeding. If unsure, ask the user.
+2. **Never silently fallback to main**: Fallback to main breaks the stacking workflow. Always warn the user and give them a chance to specify the correct parent.
+3. **Focus on the stack**: Always compare against the immediate parent in the stack, not main
+4. **Token efficiency**: Use graph tools to get only impacted code, not full files
+5. **Standards-first**: Check auto-loaded standards before reviewing
+6. **Blast radius matters**: High-impact changes (many dependents) need more scrutiny
+7. **LSP integration**: Always check for unresolved diagnostics
+8. **No test suggestions**: Do not suggest adding tests unless explicitly required by standards
 
 ## Testing Policy Note
 
