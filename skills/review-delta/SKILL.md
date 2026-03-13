@@ -6,78 +6,79 @@ argument-hint: "[file or function name]"
 
 # Review Delta
 
-Perform a focused, token-efficient code review of only the changed code and its blast radius.
+Expert code review for uncommitted changes. Reviews changes since last commit with blast-radius analysis and standards enforcement.
 
-**Token optimization:** Before starting, call `get_docs_section_tool(section_name="review-delta")` for the optimized workflow. Use ONLY changed nodes + 2-hop neighbors in context.
+## Step 1: Get Base
 
-## Steps
+Use `HEAD` as the base for delta review:
+- Auto-detect changed files from `git diff HEAD`
+- For staged changes: `git diff --cached`
+- For all uncommitted changes: `git diff HEAD`
 
-1. **Ensure the graph is current** by calling `build_or_update_graph_tool()` (incremental update).
+## Step 2-3: Build Context
 
-2. **Get review context** by calling `get_review_context_tool(include_standards=True)`. This returns:
-   - Changed files (auto-detected from git diff)
-   - Impacted nodes and files (blast radius)
-   - Source code snippets for changed areas
-   - Review guidance (wide impact warnings, inheritance concerns)
-   - **Auto-selected standards** based on file patterns (see below)
+```
+build_or_update_graph_tool(base="HEAD")
+get_review_context_tool(base="HEAD")
+get_docs_section_tool(section_name="principles")
+get_docs_section_tool(section_name="frontend")  # if apps/** changed
+get_docs_section_tool(section_name="backend")   # if packages/** changed
+```
 
-3. **Load additional standards** if needed. Standards are auto-selected based on file patterns:
-   | File Pattern | Sections Loaded |
-   |--------------|-----------------|
-   | `*financial*`, `*money*`, `*payment*`, `*billing*` | phase-1 (Financial Integrity) |
-   | `*time*`, `*date*`, `*schedule*` | phase-2 (Time & Frontend Authority) |
-   | `*api*`, `*route*`, `*handler*` | phase-3 (API Contracts) |
-   | `*util*`, `*helper*`, `*lib*` | phase-0, phase-4 (Structure + Utility Purge) |
-   | `*constant*`, `*config*` | phase-0 (Structural Integrity) |
-   | All files | summary (Pre-Submit Checklist) |
+## Step 4: Check LSP Diagnostics
 
-   Override with: `get_review_standards_tool(section_name="phase-X")`
+```
+mcp__ide__getDiagnostics()
+```
 
-4. **Analyze the blast radius** by reviewing the `impacted_nodes` and `impacted_files` in the context. Focus on:
-   - Functions whose callers changed (may need signature/behavior verification)
-   - Classes with inheritance changes (Liskov substitution concerns)
-   - Files with many dependents (high-risk changes)
+Returns: syntax errors, type errors, linting warnings, unused variables/imports, other language-specific issues.
 
-5. **Get LSP diagnostics** by calling `mcp__ide__getDiagnostics()` (no arguments for all files, or pass a file URI for specific files). This returns:
-   - Syntax errors
-   - Type errors
-   - Linting warnings
-   - Unused variables/imports
-   - Other language-specific issues
+## Step 5: Apply Standards
 
-6. **Perform the review** using the context, standards, and diagnostics. For each changed file:
-   - Review the source snippet for correctness, style, and potential bugs
-   - Check against loaded standards sections for violations
-   - Check if impacted callers/dependents need updates
-   - Verify no unresolved diagnostics remain in changed files
+Standards are loaded in Step 2-3. For each changed file:
 
-7. **Report findings** in a structured format:
-   - **Summary**: One-line overview of the changes
-   - **Risk level**: Low / Medium / High (based on blast radius)
-   - **Standards violations**: Organized by phase (if any)
-   - **LSP diagnostics**: Unresolved errors/warnings in changed files
-   - **Issues found**: Bugs, style issues, standards violations
-   - **Blast radius**: List of impacted files/functions
-   - **Recommendations**: Actionable suggestions
+1. Apply **principles** section to all files
+2. Apply **frontend** section to `apps/**` files
+3. Apply **backend** section to `packages/**` files
 
-## Standards Reference
+**Be exhaustive.** Find every violation. No issue is too small. A single-letter typo, a missed optimization, a minor inconsistency—all must be flagged.
 
-Common sections available:
-- `phase-0`: Structural Integrity & Anti-Bloat
-- `phase-0.5`: Anti-Defensive Bloat Rule
-- `phase-0.6`: Recipe Readability Rule
-- `phase-1`: Financial Integrity (BigInt only, no parseFloat)
-- `phase-2`: Time & Frontend Authority
-- `phase-3`: API Contracts & Transport
-- `phase-4`: Utility Purge
-- `summary`: Pre-Submit Checklist (includes Testing Policy)
+## Step 6: Generate Report
 
-### Testing Policy Note
-If the codebase lacks tests, do not suggest adding them. Focus on standards compliance and logic correctness. Only mention testing if explicitly required by the loaded standards sections.
+```
+## Delta Review: <changed files>
 
-## Advantages Over Full-Repo Review
+### Context
+- Base: HEAD (changes since last commit)
 
-- Only sends changed + impacted code to the model (5-10x fewer tokens)
-- Automatically identifies blast radius without manual file searching
-- Provides structural context (who calls what, inheritance chains)
-- Auto-loads relevant coding standards based on file patterns
+### Standards Violations
+- file.ts:45: `any` type - use unknown
+- api.ts:120: type assertion - validate instead
+(If none: ✓ All standards verified)
+
+### Other Issues
+<logic bugs, security, performance>
+
+### Blast Radius
+<X files, Y functions impacted>
+```
+
+**Skip positives. Focus on finding every violation.**
+
+## Guidelines
+
+1. **Base is HEAD** - Review changes since last commit.
+2. **All violations block commit** - No severity classification.
+3. **Flag with file:line** - Always include location and pattern.
+4. **Check LSP diagnostics** - Include unresolved errors/warnings.
+5. **Be nitpicky** - Find every violation, no matter how small. Skip positives.
+6. **No test suggestions** - Unless required by standards.
+7. **Token efficiency** - Use graph tools for impacted code only.
+
+## Graph Tools
+
+```
+query_graph_tool(pattern="callers_of", target="fn_name")
+query_graph_tool(pattern="importers_of", target="file_path")
+semantic_search_nodes_tool(query="auth", kind="Function")
+```

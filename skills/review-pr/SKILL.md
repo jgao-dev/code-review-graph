@@ -6,110 +6,83 @@ argument-hint: "[PR number or branch name]"
 
 # Review PR
 
-Perform a comprehensive code review of a pull request or branch diff using the knowledge graph.
+Expert code review for stacked diffs. Reviews changes against their parent in the stack with blast-radius analysis and standards enforcement.
 
-**Token optimization:** Before starting, call `get_docs_section_tool(section_name="review-pr")` for the optimized workflow. Never include full files unless explicitly asked.
+## Step 1: Get Stack Parent
 
-## Steps
+```
+gt parent
+```
 
-1. **Identify the changes** for the PR:
-   - If a PR number or branch is provided, use `git diff main...<branch>` to get changed files
-   - Otherwise auto-detect from the current branch vs main/master
+- Trust output. If returns `feature-a`, use `feature-a` (NOT `dev`).
+- Parent is previous branch: `dev <- feature-a <- feature-b`
 
-2. **Update the graph** by calling `build_or_update_graph_tool(base="main")` to ensure the graph reflects the current state.
+**If `gt` unavailable or PR review:** Use `git diff main...<branch>` or auto-detect from current branch vs main/master.
 
-3. **Get the full review context** by calling `get_review_context_tool(base="main", include_standards=True)`:
-   - This uses `main` (or the specified base branch) as the diff base
-   - Returns all changed files across all commits in the PR
-   - **Auto-loads relevant standards** based on file patterns (see below)
+## Step 2-3: Build Context
 
-4. **Load additional standards** if needed. Standards are auto-selected based on file patterns:
-   | File Pattern | Sections Loaded |
-   |--------------|-----------------|
-   | `*financial*`, `*money*`, `*payment*`, `*billing*` | phase-1 (Financial Integrity) |
-   | `*time*`, `*date*`, `*schedule*` | phase-2 (Time & Frontend Authority) |
-   | `*api*`, `*route*`, `*handler*` | phase-3 (API Contracts) |
-   | `*util*`, `*helper*`, `*lib*` | phase-0, phase-4 (Structure + Utility Purge) |
-   | All files | summary (Pre-Submit Checklist) |
+```
+build_or_update_graph_tool(base=STACK_PARENT)
+get_review_context_tool(base=STACK_PARENT)
+get_docs_section_tool(section_name="principles")
+get_docs_section_tool(section_name="frontend")  # if apps/** changed
+get_docs_section_tool(section_name="backend")   # if packages/** changed
+```
 
-   Override with: `get_review_standards_tool(section_name="phase-X")`
+## Step 4: Check LSP Diagnostics
 
-5. **Analyze impact** by calling `get_impact_radius_tool(base="main")`:
-   - Review the blast radius across the entire PR
-   - Identify high-risk areas (widely depended-upon code)
+```
+mcp__ide__getDiagnostics()
+```
 
-6. **Get LSP diagnostics** by calling `mcp__ide__getDiagnostics()` (no arguments for all files, or pass a file URI for specific files). This returns:
-   - Syntax errors
-   - Type errors
-   - Linting warnings
-   - Unused variables/imports
-   - Other language-specific issues
+Returns: syntax errors, type errors, linting warnings, unused variables/imports, other language-specific issues.
 
-7. **Deep-dive each changed file**:
-   - Read the full source of files with significant changes
-   - Check against loaded standards sections for violations
-   - Use `query_graph_tool(pattern="callers_of", target=<func>)` for high-risk functions
-   - Check for breaking changes in public APIs
-   - Verify no unresolved LSP diagnostics in changed files
+## Step 5: Apply Standards
 
-8. **Generate structured review output**:
+Standards are loaded in Step 2-3. For each changed file:
 
-   ```
-   ## PR Review: <title>
+1. Apply **principles** section to all files
+2. Apply **frontend** section to `apps/**` files
+3. Apply **backend** section to `packages/**` files
 
-   ### Summary
-   <1-3 sentence overview>
+**Be exhaustive.** Find every violation. No issue is too small. A single-letter typo, a missed optimization, a minor inconsistency—all must be flagged.
 
-   ### Risk Assessment
-   - **Overall risk**: Low / Medium / High
-   - **Blast radius**: X files, Y functions impacted
+## Step 6: Generate Report
 
-   ### Standards Compliance
-   - Phase 0 (Structure): ✅ Pass / ⚠️ Issues found
-   - Phase 1 (Financial): ✅ Pass / ⚠️ Issues found
-   - Phase 2-4: (if applicable)
+```
+## Code Review: <branch>
 
-   ### LSP Diagnostics
-   - <file_path>: X errors, Y warnings (list if any)
-   - All resolved: ✅ / ⚠️ Needs attention
+### Context
+- Parent: <STACK_PARENT>
 
-   ### File-by-File Review
-   #### <file_path>
-   - Changes: <description>
-   - Impact: <who depends on this>
-   - Issues: <bugs, style, concerns>
-   - LSP diagnostics: <unresolved errors/warnings>
-   - Standards violations: <specific phase violations>
+### Standards Violations
+- file.ts:45: `any` type - use unknown
+- api.ts:120: type assertion - validate instead
+(If none: ✓ All standards verified)
 
-   ### Diagnostics Summary
-   - **Errors**: X total (list if critical)
-   - **Warnings**: Y total (list if significant)
+### Other Issues
+<logic bugs, security, performance>
 
-   ### Recommendations
-   1. <actionable suggestion>
-   2. <actionable suggestion>
-   ```
+### Blast Radius
+<X files, Y functions impacted>
+```
 
-## Standards Reference
+**Skip positives. Focus on finding every violation.**
 
-Common sections available:
-- `phase-0`: Structural Integrity & Anti-Bloat
-- `phase-0.5`: Anti-Defensive Bloat Rule
-- `phase-0.6`: Recipe Readability Rule
-- `phase-1`: Financial Integrity (BigInt only, no parseFloat)
-- `phase-2`: Time & Frontend Authority
-- `phase-3`: API Contracts & Transport
-- `phase-4`: Utility Purge
-- `summary`: Pre-Submit Checklist (includes Testing Policy)
+## Guidelines
 
-## Testing Policy
+1. **Trust `gt parent`** - Use output exactly as returned.
+2. **All violations block merge** - No severity classification.
+3. **Flag with file:line** - Always include location and pattern.
+4. **Check LSP diagnostics** - Include unresolved errors/warnings.
+5. **Be nitpicky** - Find every violation, no matter how small. Skip positives.
+6. **No test suggestions** - Unless required by standards.
+7. **Token efficiency** - Use graph tools for impacted code only.
 
-**Do not suggest adding tests.** Focus on standards compliance and logic correctness. Only mention testing if explicitly required by a standards section. Do not flag missing test coverage as an issue.
+## Graph Tools
 
-## Tips
-
-- For large PRs, focus on the highest-impact files first (most dependents)
-- Use `semantic_search_nodes_tool` to find related code the PR might have missed
-- Check if renamed/moved functions have updated all callers
-- Apply standards systematically: start with Phase 0 (structure), then Phase 1 (financial), etc.
-- Standards are auto-loaded based on file names - financial files get phase-1 automatically
+```
+query_graph_tool(pattern="callers_of", target="fn_name")
+query_graph_tool(pattern="importers_of", target="file_path")
+semantic_search_nodes_tool(query="auth", kind="Function")
+```
