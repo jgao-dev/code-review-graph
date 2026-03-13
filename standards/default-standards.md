@@ -266,6 +266,44 @@ const MS_PER_DAY = 86400000
 const weekAgo = Date.now() - (7 * MS_PER_DAY)  // 86400000 is not obvious
 ```
 
+#### Inline Single-Use Schemas
+
+**Rule:** If a Zod schema in a schema file is used only once, move it to the usage site.
+
+```typescript
+// ❌ schemas/user.ts - schema used once, not at tRPC edge
+export const userUpdateSchema = z.object({ name: z.string() })
+
+// services/user.ts - only usage
+import { userUpdateSchema } from './schemas/user'
+async function updateUser(input: unknown) {
+  const parsed = userUpdateSchema.parse(input)
+  return db.users.update(parsed)
+}
+
+// ✅ Inline at usage site, delete from schema file
+async function updateUser(input: unknown) {
+  const parsed = z.object({ name: z.string() }).parse(input)
+  return db.users.update(parsed)
+}
+```
+
+**Exception:** Keep schemas in schema files when used as tRPC `input()` or `output()` schemas. tRPC boundaries benefit from named schemas for error messages and type inference.
+
+```typescript
+// ✅ schemas/user.ts - schema used at tRPC edge
+export const userUpdateSchema = z.object({ name: z.string() })
+
+// routers/user.ts
+const userRouter = router({
+  update: protectedProcedure
+    .input(userUpdateSchema)  // ✅ Named schema at tRPC boundary
+    .mutation(async ({ input }) => userService.update(input))
+})
+```
+
+**Rationale:** Schema files organize API contracts. But schemas used once outside tRPC boundaries add indirection without value. tRPC input/output schemas serve as API documentation and appear in error traces.
+
 #### Cognitive Load Test
 
 **Rule:** If an abstraction requires reading its implementation to understand usage, delete it.
